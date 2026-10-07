@@ -138,7 +138,8 @@ async def collect(
         async with conn.cursor() as cur:
             if cursor is None:
                 await cur.execute("SELECT max(seq) FROM events")
-                (cursor,) = await cur.fetchone()
+                row = await cur.fetchone()
+                cursor = row[0] if row else None
             elif start and end:
                 # Resume a backfill slice from the end of the run of events already
                 # stored from its start, i.e. just before the first gap
