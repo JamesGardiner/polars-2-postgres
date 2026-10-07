@@ -29,11 +29,16 @@ from sqlalchemy import create_engine
 
 load_dotenv('.env')
 
-uri = (
-    f"postgresql://{os.environ['PGUSER']}:{quote(os.environ['PGPASSWORD'])}"
-    f"@{os.environ['PGHOST']}:{os.environ.get('PGPORT', 5432)}"
-    f"/{os.environ['PGDATABASE']}"
-)
+
+def database_uri() -> str:
+    user = quote(os.environ['PGUSER'], safe='')
+    password = quote(os.environ['PGPASSWORD'], safe='')
+    return (
+        f"postgresql://{user}:{password}"
+        f"@{os.environ['PGHOST']}:{os.environ.get('PGPORT', 5432)}"
+        f"/{os.environ['PGDATABASE']}"
+    )
+
 
 EXPORT_QUERY = """
     SELECT
@@ -64,7 +69,7 @@ LIKES_BY_LANGUAGE = """
         COUNT(*) AS posts,
         SUM(COALESCE(k.likes, 0)) / COUNT(*) AS likes_per_post
     FROM posts p
-    JOIN languages l ON p.lang = l.code
+    JOIN languages l ON SPLIT_PART(p.lang, '-', 1) = l.code
     LEFT JOIN likes k ON p.uri = k.uri
     GROUP BY l.language
     HAVING COUNT(DISTINCT p.did) > 1000
@@ -90,14 +95,16 @@ def imports(source: str = 'data/events/*.parquet') -> None:
 def read() -> None:
     counts = pl.read_database_uri(
         'SELECT collection, count(*) AS n FROM events GROUP BY collection',
-        uri,
+        database_uri(),
     )
     print(counts)
 
 
 def export(out: Path = Path('data/events'), limit: int | None = None) -> None:
-    engine = create_engine(uri.replace('postgresql://', 'postgresql+psycopg://'))
+    engine = create_engine(database_uri().replace('postgresql://', 'postgresql+psycopg://'))
     out.mkdir(parents=True, exist_ok=True)
+    for old in out.glob('part-*.parquet'):
+        old.unlink()
     query = EXPORT_QUERY + (f' LIMIT {limit}' if limit else '')
 
     with engine.connect() as conn:

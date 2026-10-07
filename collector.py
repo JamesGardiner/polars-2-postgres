@@ -77,6 +77,12 @@ def strip_nulls(value):
     return value
 
 
+def dump_record(record: dict) -> str:
+    dumped = json.dumps(record)
+    # Only rebuild the record in the rare case that it contains a NUL
+    return json.dumps(strip_nulls(record)) if '\\u0000' in dumped else dumped
+
+
 def to_row(message: dict) -> tuple | None:
     payload = message.get('payload', {})
     if not payload.get('$type', '').endswith('#commit'):
@@ -89,7 +95,7 @@ def to_row(message: dict) -> tuple | None:
         payload['operation'],
         payload['collection'],
         payload['rkey'],
-        json.dumps(strip_nulls(record)) if record is not None else None,
+        dump_record(record) if record is not None else None,
     )
 
 
@@ -166,7 +172,7 @@ async def collect(
                             log.info('%s: finished', name)
                             return
 
-            except (websockets.ConnectionClosed, OSError) as e:
+            except (websockets.WebSocketException, OSError) as e:
                 log.warning('%s: connection lost (%s), retrying in %ds', name, e, backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 60)
@@ -211,13 +217,18 @@ def backfill(hours: float, workers: int, end: datetime) -> None:
         raise SystemExit(f'{len(failed)} worker(s) failed; re-run to resume')
 
 
+def parse_utc(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--backfill-hours', type=float, help='replay this many hours of history')
     parser.add_argument('--workers', type=int, default=6, help='parallel connections for backfill')
     parser.add_argument(
         '--end',
-        type=datetime.fromisoformat,
+        type=parse_utc,
         default=datetime.now(timezone.utc),
         help='backfill up to this UTC time (default: now); pass the same value to resume a run',
     )
