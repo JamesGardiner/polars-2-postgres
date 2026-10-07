@@ -11,10 +11,10 @@
 # ///
 """The code from "Postgres to DataFrame, Ten Years Later", in order.
 
-    uv run analysis.py export   # Postgres -> data/events/*.parquet
-    uv run analysis.py imports  # how many posts were backdated imports
-    uv run analysis.py query    # the SQL example over the Parquet files
-    uv run analysis.py sort     # the larger-than-memory sort
+uv run analysis.py export   # Postgres -> data/events/*.parquet
+uv run analysis.py imports  # how many posts were backdated imports
+uv run analysis.py query    # the SQL example over the Parquet files
+uv run analysis.py sort     # the larger-than-memory sort
 """
 
 import os
@@ -27,15 +27,15 @@ import polars as pl
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
-load_dotenv('.env')
+load_dotenv(".env")
 
 
 def database_uri() -> str:
-    user = quote(os.environ['PGUSER'], safe='')
-    password = quote(os.environ['PGPASSWORD'], safe='')
+    user = quote(os.environ["PGUSER"], safe="")
+    password = quote(os.environ["PGPASSWORD"], safe="")
     return (
         f"postgresql://{user}:{password}"
-        f"@{os.environ['PGHOST']}:{os.environ.get('PGPORT', 5432)}"
+        f"@{os.environ['PGHOST']}:{os.environ.get('PGPORT', '5432')}"
         f"/{os.environ['PGDATABASE']}"
     )
 
@@ -87,25 +87,27 @@ IMPORTED_POSTS = """
 """
 
 
-def imports(source: str = 'data/events/*.parquet') -> None:
+def imports(source: str = "data/events/*.parquet") -> None:
     ctx = pl.SQLContext(events=pl.scan_parquet(source))
     print(ctx.execute(IMPORTED_POSTS).collect())
 
 
 def read() -> None:
     counts = pl.read_database_uri(
-        'SELECT collection, count(*) AS n FROM events GROUP BY collection',
+        "SELECT collection, count(*) AS n FROM events GROUP BY collection",
         database_uri(),
     )
     print(counts)
 
 
-def export(out: Path = Path('data/events'), limit: int | None = None) -> None:
-    engine = create_engine(database_uri().replace('postgresql://', 'postgresql+psycopg://'))
+def export(out: Path = Path("data/events"), limit: int | None = None) -> None:
+    engine = create_engine(
+        database_uri().replace("postgresql://", "postgresql+psycopg://")
+    )
     out.mkdir(parents=True, exist_ok=True)
-    for old in out.glob('part-*.parquet'):
+    for old in out.glob("part-*.parquet"):
         old.unlink()
-    query = EXPORT_QUERY + (f' LIMIT {limit}' if limit else '')
+    query = EXPORT_QUERY + (f" LIMIT {limit}" if limit else "")
 
     with engine.connect() as conn:
         batches = pl.read_database(
@@ -114,25 +116,25 @@ def export(out: Path = Path('data/events'), limit: int | None = None) -> None:
             iter_batches=True,
             batch_size=500_000,
             schema_overrides={
-                'created_at': pl.String,
-                'lang': pl.String,
-                'text': pl.String,
-                'subject_uri': pl.String,
+                "created_at": pl.String,
+                "lang": pl.String,
+                "text": pl.String,
+                "subject_uri": pl.String,
             },
         )
         for i, batch in enumerate(batches):
             batch = batch.with_columns(
-                pl.col('time').dt.convert_time_zone('UTC'),
-                pl.col('created_at').str.to_datetime(strict=False, time_zone='UTC'),
+                pl.col("time").dt.convert_time_zone("UTC"),
+                pl.col("created_at").str.to_datetime(strict=False, time_zone="UTC"),
             )
-            batch.write_parquet(out / f'part-{i:04d}.parquet')
-            print(f'wrote part {i} ({len(batch):,} rows)')
+            batch.write_parquet(out / f"part-{i:04d}.parquet")
+            print(f"wrote part {i} ({len(batch):,} rows)")
 
 
-def query(source: str = 'data/events/*.parquet') -> None:
+def query(source: str = "data/events/*.parquet") -> None:
     ctx = pl.SQLContext(
         events=pl.scan_parquet(source),
-        languages=pl.scan_csv('data/languages.csv'),
+        languages=pl.scan_csv("data/languages.csv"),
     )
     lf = ctx.execute(LIKES_BY_LANGUAGE)
     print(lf.explain())
@@ -140,18 +142,20 @@ def query(source: str = 'data/events/*.parquet') -> None:
     start = time.perf_counter()
     result = lf.collect()
     print(result)
-    print(f'collected in {time.perf_counter() - start:.1f}s')
+    print(f"collected in {time.perf_counter() - start:.1f}s")
 
 
-def sort(source: str = 'data/events/*.parquet') -> None:
+def sort(source: str = "data/events/*.parquet") -> None:
     start = time.perf_counter()
     (
         pl.scan_parquet(source)
-        .sort('text', nulls_last=True)
-        .sink_parquet('data/sorted.parquet')
+        .sort("text", nulls_last=True)
+        .sink_parquet("data/sorted.parquet")
     )
-    print(f'sorted in {time.perf_counter() - start:.1f}s')
+    print(f"sorted in {time.perf_counter() - start:.1f}s")
 
 
-if __name__ == '__main__':
-    {'read': read, 'export': export, 'imports': imports, 'query': query, 'sort': sort}[sys.argv[1]]()
+if __name__ == "__main__":
+    {"read": read, "export": export, "imports": imports, "query": query, "sort": sort}[
+        sys.argv[1]
+    ]()
